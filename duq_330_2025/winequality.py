@@ -76,5 +76,5 @@ class WineQuality:
 
 if __name__ == '__main__':
     wq = WineQuality()
-    wq.read('data/wine+quality.zip')
-    print(wq.train)
+    wq.read('data/wine_quality.zip')
+    print(wq.df)
