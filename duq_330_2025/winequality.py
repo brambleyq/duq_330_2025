@@ -45,6 +45,7 @@ class WineQuality:
         zf = ZipFile(path)
         df = pd.read_csv(zf.open('winequality-white.csv'),sep=';')
         self.df = df
+
     
     def training(self,test_frac: float = 0.1):
         """ Return ONLY the training data.
