@@ -1,7 +1,7 @@
 import pandas as pd
 
 class Tmdb:
-    def __init__(self,path:str):
+    def __init__(self, path:str):
         """reads in a the movie database data from a csv file
 
         Args:
@@ -11,7 +11,7 @@ class Tmdb:
         self._clean_df_columns()
         self._clean_data()
         # going to want to seperate these anyway so its done here
-        self.safe = self.df.loc[ ~ self.df['adult']]
+        self.safe = self.df.loc[ ~self.df['adult']]
         self.adult = self.df.loc[self.df['adult']]
     
     def _clean_df_columns(self):
@@ -45,7 +45,8 @@ class Tmdb:
         """make the data more usable"""
         self.df.dropna(subset=['title'],inplace=True)
         # to combat repeat titles the year will be put after every title in ()
-        self.df['title'] = self.df.apply(lambda row: row['title'] + '' if pd.isna(row['release_date']) else f' ({row['release_date'].split('-')[0]})', axis=1)
+        self.df['title'] = self.df.apply(lambda row: row['title'] + 
+            '' if pd.isna(row['release_date']) else f' ({row['release_date'].split('-')[0]})', axis=1)
 
 
 if __name__ == "__main__":
