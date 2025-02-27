@@ -123,13 +123,12 @@ class ResuableClassifier:
         return LogisticRegression()
     
     def _create_random_forest(self):
-        """create a new logistic regression model from sklearn
-        """
+        """create a new logistic regression model from sklearn"""
         return RandomForestClassifier()
     
 if __name__ == "__main__":
-    import duq_330_2025.winequality
-    wq = duq_330_2025.winequality.WineQuality()
+    import winequality
+    wq = winequality.WineQuality()
     wq.read('data/wine+quality.zip')
     df = wq.df
 
