@@ -1,5 +1,8 @@
 from dataclasses import dataclass
 import xml.etree.ElementTree as ET
+import sqlalchemy
+import sqlite3
+import pandas as pd
 
 @dataclass
 class Assignee():
@@ -93,18 +96,18 @@ def parse_assignment(element:ET.Element) -> Patent|None:
         element (ET.Element): an xtml element
     """
     assignors = element.find('patent-assignors')
-    assinees = element.find('patent-assignees')
+    assignees = element.find('patent-assignees')
     records = element.find('patent-properties')
     if assignors is None:
         return None
     if records is None:
         return None
-    if assinees is None:
+    if assignees is None:
         return None
 
     people = []
     companies = []
-    for company in assinees.findall('patent-assignee'):
+    for company in assignees.findall('patent-assignee'):
         xml_name = company.find('name')
         if xml_name is None:
             continue
@@ -151,15 +154,53 @@ def parse_patents(path:str) -> list[Patent]:
     tree = ET.parse(path)
     root = tree.getroot()
     
-    out = []
+    out:list[Patent] = [] 
     assignments = root.find('patent-assignments')
     if assignments is None:
         return []
     for el in assignments.findall('patent-assignment'):
         out.append(parse_assignment(el))
+
+    engine = sqlalchemy.create_engine('sqlite:///data/patent_npi_db.sqlite')
+    conn = engine.connect()
+
+    for patent in out:
+        ext_id = patent.document_ids[0]
+        rows = pd.read_sql(f'SELECT patent_id FROM external_ids WHERE external_id={ext_id}', conn)
+        if len(rows) == 0:
+
+            pd.DataFrame([[patent.name]], columns=['title']).to_sql('patents',conn,if_exists='append',index=False)
+            patent_id = pd.read_sql('SELECT last_insert_rowid() FROM patents;',conn)
+            patent_id = int(patent_id.iloc[0]['last_insert_rowid()'])
+            
+            pd.DataFrame([[patent_id, docid] for docid in patent.document_ids], columns=['patent_id','external_id']).to_sql('external_ids',conn,if_exists='append',index=False)
+            pd.DataFrame([[patent_id, assignee.name, assignee.address] for assignee in patent.assignees], columns=['patent_id','title','address']).to_sql('asignees',conn,if_exists='append',index=False)
+            pd.DataFrame([[patent_id, assignor.surname, assignor.forename] for assignor in patent.assignors], columns=['patent_id','surname','forename']).to_sql('assignors',conn,if_exists='append',index=False)
     
     return [patent for patent in out if patent is not None and patent.is_valid()]
 
+def patents_to_dataframes(patents:list[Patent]):
+    """convert patents to tables ot be stored in sql
+
+    Args:
+        patents (list[Patent]): all patents
+    """
+    # database connections
+    engine = sqlalchemy.create_engine('sqlite:///data/patent_npi_db.sqlite')
+    conn = engine.connect()
+
+    # Tables: patents, assignors, assignees, uspto_ids
+    temp_patents_table = [[patent.document_ids[0], patent.name] for patent in patents]
+    temp_assignors_table = [[patent.document_ids[0], assignee.name, assignee.address] for patent in patents for assignee in patent.assignees]
+    temp_assignees_table = [[patent.document_ids[0], assignor.forename, assignor.surname] for patent in patents for assignor in patent.assignors]
+    temp_external_ids_table = [[patent.document_ids[0], docid] for patent in patents for docid in patent.document_ids[1:]] 
+    
+    pd.DataFrame(temp_patents_table,columns=['ext_id','title']).to_sql('temp_patents', conn, if_exists='append')
+    pd.DataFrame(temp_assignees_table,columns=['ext_id','name','address']).to_sql('temp_assignees', conn, if_exists='append')
+    pd.DataFrame(temp_assignors_table,columns=['ext_id','forename','surname']).to_sql('temp_assignors', conn, if_exists='append')
+    pd.DataFrame(temp_external_ids_table,columns=['ext_id','document_ids']).to_sql('temp_external_ids', conn, if_exists='append')
+
 if __name__ == '__main__':
     all_patents = parse_patents('data/ad20250218.xml')
+    patents_to_dataframes(all_patents)
     print('debug')
