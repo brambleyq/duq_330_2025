@@ -6,7 +6,7 @@ def create_database():
     """create a new sqlite database
     """
     query = """
-    CREATE TABLE patents (
+    CREATE TABLE IF NOT EXISTS patents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title VARCHAR(250) NOT NULL
     );
