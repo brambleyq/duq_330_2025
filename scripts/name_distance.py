@@ -17,7 +17,7 @@ def pair_up(column1:pd.Series,column2:pd.Series) -> pd.DataFrame:
     return pd.DataFrame([[val1,val2] for val1 in column1 for val2 in column2],
                          columns=['names_a','names_b'])
 
-def slow_compare(paired_dataset:pd.DataFrame) -> pd.DataFrame:
+def name_distance(paired_dataset:pd.DataFrame) -> pd.DataFrame:
     """takes in a paired data frame and returns that data frame
     with the distances of the pair of names
 
@@ -39,5 +39,5 @@ if __name__ == '__main__':
     assignee_df['name'] = assignee_df.apply(lambda row: row['forename'] +' '+ row['surname'],axis=1)
     print(len(assignee_df))
     paired = pair_up(assignee_df['name'],assignee_df['name'])
-    print(slow_compare(paired))
+    print(name_distance(paired))
     print('kk')
