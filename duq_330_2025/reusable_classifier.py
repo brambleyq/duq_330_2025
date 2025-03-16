@@ -9,7 +9,7 @@ import os
 import json
 
 
-class ResuableClassifier:
+class ReusableClassifier:
     def __init__(self, model_type: str):
         """Create a classifier, storing a model and metadata.
 
