@@ -2,6 +2,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+import xgboost as xgb
 import pandas as pd
 import pickle
 import os
@@ -26,6 +27,8 @@ class ResuableClassifier:
             self._model = self._create_logistic_progression()
         elif model_type == 'random_forest':
             self._model = self._create_random_forest()
+        elif model_type == 'xgboost':
+            self._model = self._create_xgboost()
         else:
             raise ValueError('not a valid model type')
     
@@ -125,6 +128,10 @@ class ResuableClassifier:
     def _create_random_forest(self):
         """create a new logistic regression model from sklearn"""
         return RandomForestClassifier()
+    
+    def _create_xgboost(self):
+        """create a new xgboost model"""
+        return xgb.XGBClassifier()
     
 if __name__ == "__main__":
     import winequality
