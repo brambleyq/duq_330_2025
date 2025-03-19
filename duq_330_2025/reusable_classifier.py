@@ -74,7 +74,7 @@ class ReusableClassifier:
 
     def predict(self,features:pd.DataFrame):
         self._scalar.transform(features)
-        self._model.predict(features)
+        return self._model.predict(features)
 
     def save(self,path:str):
         """save model
