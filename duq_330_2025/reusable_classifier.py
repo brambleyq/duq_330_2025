@@ -73,8 +73,12 @@ class ReusableClassifier:
 
 
     def predict(self,features:pd.DataFrame):
-        self._scalar.transform(features)
+        features = self._scalar.transform(features)
         return self._model.predict(features)
+    
+    def predict_proba(self,features:pd.DataFrame):
+        features = self._scalar.transform(features)
+        return [ps[1] for ps in self._model.predict_proba(features)]
 
     def save(self,path:str):
         """save model
@@ -132,6 +136,7 @@ class ReusableClassifier:
     def _create_xgboost(self):
         """create a new xgboost model"""
         return xgb.XGBClassifier()
+    
     
 if __name__ == "__main__":
     import winequality
