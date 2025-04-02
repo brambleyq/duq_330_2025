@@ -207,6 +207,13 @@ def patents_to_dataframes(patents:list[Patent]):
     
     conn.close()
 
+def read_assignees_sql(path:str):
+    conn = sqlite3.connect(path)
+    assignee_df = pd.read_sql('SELECT * FROM assignors',conn)
+    conn.close()
+    assignee_df['name'] = assignee_df.apply(lambda row: row['forename'] +' '+ row['surname'],axis=1)
+    return assignee_df
+
 if __name__ == '__main__':
     all_patents = parse_patents('data/ad20250218.xml')
     # patents_to_dataframes(all_patents)
