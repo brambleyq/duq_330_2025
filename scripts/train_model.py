@@ -25,44 +25,85 @@ def typo_maker(name:str,delta:float,set_seed=None) -> str:
         name[i] = rand_letter
     return ''.join(name)
 
-def create_training_data(first_df:pd.DataFrame,second_df:pd.DataFrame,manual_training_df:pd.DataFrame):
+def create_training_data(first_df:pd.DataFrame,
+                         first_id_col:str,
+                         second_df:pd.DataFrame,second_id_col:str,
+                         manual_training_df:pd.DataFrame,
+                         sample_num:int=60):
     """takes in two data frames of data and a third manualy selected data frame and returns a
     data frame with paired names
 
     Args:
         first_df (pd.DataFrame): a data frame with gathered data (has names column)
+        
         second_df (pd.DataFrame): can be the same frame as first (has names column)
-        manual_training_df (pd.DataFrame): manually checked data desired to be added to training (has names column)
+        
+        manual_training_df (pd.DataFrame): manually checked data desired to be 
+        added to training (has names column)
     """
-    sample_df = pd.concat([first_df.sample(10), second_df.sample(10)])
-    # pair up same names
-    training_df = manual_training_df
-    training_df = pd.concat([training_df,
-                            pd.DataFrame([[name,name,1] 
-                                        for name in sample_df['name']]
-                                        ,columns=['names_a','names_b','is_same'])])
-    # now give them typos that make it slightly different
-    training_df = pd.concat([training_df,
-                            pd.DataFrame([[name,typo_maker(name,.05),1] 
-                                        for name in sample_df['name']]
-                                        ,columns=['names_a','names_b','is_same'])])
-    training_df = pd.concat([training_df,
-                            pd.DataFrame([[name,typo_maker(name,.1),2] 
-                                        for name in sample_df['name']]
-                                        ,columns=['names_a','names_b','is_same'])])
-    training_df = pd.concat([training_df,
-                            pd.DataFrame([[name,typo_maker(name,.15),1] 
-                                        for name in sample_df['name']]
-                                        ,columns=['names_a','names_b','is_same'])])
-    
-    for _ in range(4):
-        scrambled_sample = sample_df.sample(frac=1, replace = True)
-        training_df = pd.concat([training_df,
-                                    pd.DataFrame([[scrambled_sample['name'].iloc[i],scrambled_sample['name'].iloc[i],0] 
-                                                for i in range(len(scrambled_sample)) 
-                                                if (scrambled_sample['name'].iloc[i]) != (scrambled_sample['name'].iloc[i])]
-                                                ,columns=['names_a','names_b','is_same'])])
 
+    assert 'surname' in first_df
+    assert 'forename' in first_df
+    assert 'surname' in second_df
+    assert 'forename' in second_df
+
+    assert 'surname_a' in manual_training_df
+    assert 'surname_b' in manual_training_df
+    assert 'forename_a' in manual_training_df
+    assert 'forename_b' in manual_training_df
+    assert 'is_same' in manual_training_df
+
+    first_sample_df = first_df.sample(sample_num//2,replace=False)
+    second_sample_df = second_df.sample(sample_num//2,replace=False)
+
+    first_sample_df['id'] = first_sample_df[first_id_col]
+    second_sample_df['id'] = second_sample_df[second_id_col]
+
+    sample_df = pd.concat([first_sample_df, second_sample_df])
+
+    # manual training data
+    training_df = manual_training_df
+    print(len(training_df))
+
+    # pair up same names
+    training_df = pd.concat([training_df,
+                             pd.DataFrame([{'surname_a':row['surname'],
+                                            'surname_b':row['surname'],
+                                            'forename_a':row['forename'],
+                                            'forename_b':row['forename'],
+                                            'is_same':0} 
+                                            for _,row in sample_df.iterrows()
+                                            ])
+                            ])
+    
+    num_gen = int((.7*sample_num-1)/.3)
+
+    # now give them typos that make it slightly different
+    for i in range(1,num_gen):
+        training_df = pd.concat([training_df,
+                                 pd.DataFrame([{'surname_a':row['surname'],
+                                                'surname_b':typo_maker(row['surname'],i/(10*num_gen)),
+                                                'forename_a':row['forename'],
+                                                'forename_b':typo_maker(row['forename'],i/(10*num_gen)),
+                                                'is_same':1} 
+                                                for _,row in sample_df.iterrows()])
+                                                ])
+    print(len(training_df))
+
+
+    # give mismatch names 
+    training_df = pd.concat([training_df,
+                             pd.DataFrame([{'surname_a':row_a['surname'],
+                                            'surname_b':row_b['surname'],
+                                            'forename_a':row_a['forename'],
+                                            'forename_b':row_b['forename'],
+                                            'is_same':0} 
+                                            for id_a,row_a in sample_df.iterrows() 
+                                            for id_b,row_b in sample_df.iterrows()
+                                            if id_a != id_b
+                                            ])
+                            ])
+    print(len(training_df))
     return training_df
 
 def train_model(features_df:pd.DataFrame,labels_series:pd.Series) -> ReusableClassifier:
@@ -83,51 +124,86 @@ def train_model(features_df:pd.DataFrame,labels_series:pd.Series) -> ReusableCla
     model.train(features_df,labels_series)
     return model
 
-def read_manual_training(path:str) -> pd.DataFrame:
-    return pd.read_csv(path)[['names_a','names_b','is_same']]
-
 if __name__ == '__main__':
+    # read in all the dataframes
     assignee_df = read_assignees_sql('data/patent_npi_db.sqlite')
     npi_df = npi.read("data/npidata_pfile_20250303-20250309.csv")
-    
     manual_training = pd.read_csv('data/manual_training.csv')
-    training_df = create_training_data(assignee_df,assignee_df,manual_training)
+    
 
+
+    training_df = create_training_data(assignee_df,'patent_id',npi_df,'npi',manual_training,500)
+
+    # calculate features
     training_df = name_distance(training_df)
 
-    model = train_model(training_df[['name_distance']],training_df['is_same'])
-    ft_model = fasttext.load_model('data/cc.en.50.bin')
-    start = time.time()
-    paired_test = pd.read_csv('data/paired_assignee_npi_names.csv',index_col=0)
-    print(time.time()-start)
-
-    paired_test['predict'] = model.predict(paired_test[['name_distance']])
-    paired_test['predict_p'] = model.predict_proba(paired_test[['name_distance']])
+    # train model
+    model = train_model(training_df[['surname_distance','forename_distance']],training_df['is_same'])
     
+
+    # already loaded databases and models
+    ft_model = fasttext.load_model('data/cc.en.50.bin')
+    
+    # blocking
+    # paired_test = pair_up(assignee_df,'patent_id',npi_df,'npi',ft_model)
+    
+    # calculate features
+    # paired_test = name_distance(paired_test)
+
+    # save the pairing and features
+    # paired_test.to_csv('data/paired_assignee_npi_names.csv',index=None)
+
+    # read in saved loading, blocking, training, and calc features
+    paired_test = pd.read_csv('data/paired_assignee_npi_names.csv',index_col=None)
+
+    # predict from model
+    paired_test['predict'] = model.predict(paired_test[['surname_distance','forename_distance']])
+    paired_test['predict_p'] = model.predict_proba(paired_test[['surname_distance','forename_distance']])
+    
+    # connected components 
+
+    # rename for sql saving
+    mapper = {
+        'surname_a':'patentee_surname',
+        'forename_a':'patentee_forename',
+        'id_a':'patentee_id',
+        'surname_b':'doctor_surname',
+        'forename_b':'doctor_forename',
+        'id_b':'doctor_id'
+    }
+
+    sql_df = paired_test.loc[paired_test['predict'] == 1]
+
+    sql_df = sql_df.rename(columns=mapper)
+
+    # save results 
     conn = sqlite3.connect('data/patent_npi_db.sqlite')
-    paired_test.to_sql('patentees_and_doctors',conn,if_exists='append')
+    sql_df.to_sql('patentees_and_doctors',conn,if_exists='append',index=False)
     conn.close()
 
-    print(paired_test['predict'].sum())
-    print(paired_test.loc[paired_test['predict'] > 0])
     
-    paired_test.to_csv('data/paired_assignee_npi_names.csv',index=None)
+    
     divided_dfs:list[pd.DataFrame] = []
     for i in range(10):
-        divided_dfs.append(paired_test.loc[(i/10 <= paired_test['predict_p']) & ((i+1)/10 > paired_test['predict_p'])])
+        divided_dfs.append(paired_test.loc[(i/10 <= paired_test['predict_p']) & 
+                                           ((i+1)/10 > paired_test['predict_p'])])
     
     print(len(divided_dfs))
     print(list(map(len,divided_dfs)))
     manual_dicts = []
     for bin in divided_dfs:
-        bin = bin.sample(min(10,len(bin)))
-        for ind,entry in bin.iterrows():
+        bin = bin.sample(min(20,len(bin)))
+        for _,entry in bin.iterrows():
             print(entry)
             manual_pick = input('is same: ')
-            manual_dicts.append( {'names_a':entry['names_a'],
-                            'names_b':entry['names_b'],
-                            'is_same':int(manual_pick)} )
+            manual_dicts.append( {'forename_a':entry['forename_a'],
+                                  'forename_b':entry['forename_b'],
+                                  'surname_a':entry['surname_a'],
+                                  'surname_b':entry['surname_b'],
+                                  'id_a':entry['id_a'],
+                                  'id_b':entry['id_b'],
+                                  'is_same':int(manual_pick)} )
     manual_training = pd.concat([manual_training,pd.DataFrame(manual_dicts)],ignore_index=True)
-    manual_training.to_csv('data/manual_training.csv',index=None)
+    manual_training[['surname_a','surname_b','forename_a','forename_b','is_same']].to_csv('data/manual_training.csv',index=None)
 
     print('kk')
