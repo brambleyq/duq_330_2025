@@ -1,5 +1,4 @@
 import pandas as pd
-from zipfile import ZipFile
 
 
 def read(path: str) -> pd.DataFrame:
@@ -9,7 +8,7 @@ def read(path: str) -> pd.DataFrame:
     mapper = {
             'NPI': 'npi',
             'Healthcare Provider Taxonomy Code_1': 'taxonomy_code',
-            'Provider Last Name (Legal Name)': 'last_name',
+            'Provider Last Name (Legal Name)': 'surname',
             'Provider First Name': 'forename',
             'Provider First Line Business Practice Location Address': 'address',
             'Certification Date': 'cert_date',
@@ -19,8 +18,7 @@ def read(path: str) -> pd.DataFrame:
         }
     
     df = df.rename(columns=mapper)[mapper.values()]
-    df.dropna(subset=['forename','last_name'],inplace=True)
-    df['name'] = df.apply(lambda row: row['forename'] +' '+ row['last_name'],axis=1)
+    df.dropna(subset=['forename','surname'],inplace=True)
     return df
 
     #There are 850 missing values for taxonomy_code, address, state, and country
@@ -29,5 +27,5 @@ def read(path: str) -> pd.DataFrame:
 
 
 if __name__ == '__main__':
-    df = read("data/npidata_pfile_20050523-20250309.csv")
+    df = read("data/npidata_pfile_20250303-20250309.csv")
     print(df.head())
