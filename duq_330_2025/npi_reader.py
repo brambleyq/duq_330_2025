@@ -18,7 +18,7 @@ def read(path: str) -> pd.DataFrame:
         }
     
     df = df.rename(columns=mapper)[mapper.values()]
-    df.dropna(subset=['forename','surname'],inplace=True)
+    df.dropna(subset=['forename','surname','address'],inplace=True)
     return df
 
     #There are 850 missing values for taxonomy_code, address, state, and country
