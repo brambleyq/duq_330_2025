@@ -1,5 +1,5 @@
 import time
-from duq_330_2025.patent_reader import read_assignees_sql
+from duq_330_2025.patent_reader import read_patentees_sql
 from duq_330_2025.reusable_classifier import ReusableClassifier
 from name_distance import pair_up,name_distance
 import sqlite3
@@ -7,6 +7,8 @@ import pandas as pd
 import random
 import duq_330_2025.npi_reader as npi
 import fasttext
+import networkx as nx
+
 
 def typo_maker(name:str,delta:float,set_seed=None) -> str:
     random.seed(set_seed)
@@ -44,13 +46,19 @@ def create_training_data(first_df:pd.DataFrame,
 
     assert 'surname' in first_df
     assert 'forename' in first_df
+    assert 'address' in first_df
+    assert first_id_col in first_df
     assert 'surname' in second_df
     assert 'forename' in second_df
+    assert 'address' in second_df
+    assert second_id_col in second_df
 
     assert 'surname_a' in manual_training_df
     assert 'surname_b' in manual_training_df
     assert 'forename_a' in manual_training_df
     assert 'forename_b' in manual_training_df
+    assert 'address_a' in manual_training_df
+    assert 'address_b' in manual_training_df
     assert 'is_same' in manual_training_df
 
     first_sample_df = first_df.sample(sample_num//2,replace=False)
@@ -71,11 +79,15 @@ def create_training_data(first_df:pd.DataFrame,
                                             'surname_b':row['surname'],
                                             'forename_a':row['forename'],
                                             'forename_b':row['forename'],
-                                            'is_same':0} 
+                                            'address_a':row['address'],
+                                            'address_b':row['address'],
+                                            'is_same':1} 
                                             for _,row in sample_df.iterrows()
                                             ])
                             ])
     
+    # adds the generated typos such that 
+    # same name matched + typos is 70% of the the total training data
     num_gen = int((.7*sample_num-1)/.3)
 
     # now give them typos that make it slightly different
@@ -85,6 +97,8 @@ def create_training_data(first_df:pd.DataFrame,
                                                 'surname_b':typo_maker(row['surname'],i/(10*num_gen)),
                                                 'forename_a':row['forename'],
                                                 'forename_b':typo_maker(row['forename'],i/(10*num_gen)),
+                                                'address_a':row['address'],
+                                                'address_b':typo_maker(row['address'],i/(10*num_gen)),
                                                 'is_same':1} 
                                                 for _,row in sample_df.iterrows()])
                                                 ])
@@ -97,6 +111,8 @@ def create_training_data(first_df:pd.DataFrame,
                                             'surname_b':row_b['surname'],
                                             'forename_a':row_a['forename'],
                                             'forename_b':row_b['forename'],
+                                            'address_a':row_a['address'],
+                                            'address_b':row_b['address'],
                                             'is_same':0} 
                                             for id_a,row_a in sample_df.iterrows() 
                                             for id_b,row_b in sample_df.iterrows()
@@ -126,62 +142,83 @@ def train_model(features_df:pd.DataFrame,labels_series:pd.Series) -> ReusableCla
 
 if __name__ == '__main__':
     # read in all the dataframes
-    assignee_df = read_assignees_sql('data/patent_npi_db.sqlite')
-    npi_df = npi.read("data/npidata_pfile_20250303-20250309.csv")
+    patentee_df = read_patentees_sql('data/patent_npi_db.sqlite')
+    doctor_df = npi.read("data/npidata_pfile_20250303-20250309.csv")
     manual_training = pd.read_csv('data/manual_training.csv')
-    
+    # manual_training = pd.DataFrame([{'forename_a':'',
+    #                                  'forename_b':'',
+    #                                  'surname_a':'',
+    #                                  'surname_b':'',
+    #                                  'address_a':'',
+    #                                  'address_b':'',
+    #                                  'is_same':1}])
 
 
-    training_df = create_training_data(assignee_df,'patent_id',npi_df,'npi',manual_training,500)
+    training_df = create_training_data(patentee_df,'patent_id',doctor_df,'npi',manual_training,200)
 
     # calculate features
     training_df = name_distance(training_df)
 
     # train model
-    model = train_model(training_df[['surname_distance','forename_distance']],training_df['is_same'])
+    model = train_model(training_df[['surname_distance','forename_distance','address_distance']],training_df['is_same'])
     
 
     # already loaded databases and models
     ft_model = fasttext.load_model('data/cc.en.50.bin')
     
     # blocking
-    # paired_test = pair_up(assignee_df,'patent_id',npi_df,'npi',ft_model)
-    
+    start = time.time()
+    paired_test = pair_up(patentee_df,'patent_id',doctor_df,'npi',ft_model)
+    print(time.time()-start)
+
     # calculate features
-    # paired_test = name_distance(paired_test)
+    start = time.time()
+    paired_test = name_distance(paired_test)
+    print(time.time()-start)
 
     # save the pairing and features
-    # paired_test.to_csv('data/paired_assignee_npi_names.csv',index=None)
+    paired_test.to_csv('data/paired_patentee_doctor_names.csv',index=None)
 
     # read in saved loading, blocking, training, and calc features
-    paired_test = pd.read_csv('data/paired_assignee_npi_names.csv',index_col=None)
+    # paired_test = pd.read_csv('data/paired_patentee_doctor_names.csv',index_col=None)
 
     # predict from model
-    paired_test['predict'] = model.predict(paired_test[['surname_distance','forename_distance']])
-    paired_test['predict_p'] = model.predict_proba(paired_test[['surname_distance','forename_distance']])
-    
-    # connected components 
+    paired_test['predict'] = model.predict(paired_test[['surname_distance','forename_distance','address_distance']])
+    paired_test['predict_p'] = model.predict_proba(paired_test[['surname_distance','forename_distance','address_distance']])
 
     # rename for sql saving
     mapper = {
         'surname_a':'patentee_surname',
         'forename_a':'patentee_forename',
+        'address_a':'patentee_address',
         'id_a':'patentee_id',
         'surname_b':'doctor_surname',
         'forename_b':'doctor_forename',
+        'address_b':'doctor_address',
         'id_b':'doctor_id'
     }
 
-    sql_df = paired_test.loc[paired_test['predict'] == 1]
+    sql_df = paired_test.loc[paired_test['predict'] == 1].rename(columns=mapper)
 
-    sql_df = sql_df.rename(columns=mapper)
+    # connected components
+    edges = [(row['patentee_id'],row['doctor_id']) for _,row in sql_df.iterrows()] 
+    nodes = [
+             (row['patentee_id'],row['patentee_forename']+' '+row['patentee_surname']) 
+             for _,row in sql_df.iterrows()
+             ] + [
+             (row['doctor_id'],row['doctor_forename']+' '+row['doctor_surname']) 
+             for _,row in sql_df.iterrows()]
+    people_graph = nx.Graph()
+    people_graph.add_nodes_from(nodes)
+    people_graph.add_edges_from(edges)
+    connected_people = list(nx.connected_components(people_graph))
+
+    print(set(paired_test['id_a'].tolist()).intersection(set(paired_test['id_b'].tolist())))
 
     # save results 
     conn = sqlite3.connect('data/patent_npi_db.sqlite')
     sql_df.to_sql('patentees_and_doctors',conn,if_exists='append',index=False)
     conn.close()
-
-    
     
     divided_dfs:list[pd.DataFrame] = []
     for i in range(10):
@@ -194,16 +231,18 @@ if __name__ == '__main__':
     for bin in divided_dfs:
         bin = bin.sample(min(20,len(bin)))
         for _,entry in bin.iterrows():
-            print(entry)
+            print(entry['forename_a']+' '+entry['surname_b']+' | '+entry['forename_b']+' '+entry['surname_b'],entry['address_a']+' | '+entry['address_b'],sep='\n')
             manual_pick = input('is same: ')
             manual_dicts.append( {'forename_a':entry['forename_a'],
                                   'forename_b':entry['forename_b'],
                                   'surname_a':entry['surname_a'],
                                   'surname_b':entry['surname_b'],
+                                  'address_a':entry['address_a'],
+                                  'address_b':entry['address_b'],
                                   'id_a':entry['id_a'],
                                   'id_b':entry['id_b'],
                                   'is_same':int(manual_pick)} )
     manual_training = pd.concat([manual_training,pd.DataFrame(manual_dicts)],ignore_index=True)
-    manual_training[['surname_a','surname_b','forename_a','forename_b','is_same']].to_csv('data/manual_training.csv',index=None)
+    manual_training.to_csv('data/manual_training.csv',index=None)
 
     print('kk')
