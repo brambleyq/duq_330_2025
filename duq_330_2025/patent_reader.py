@@ -192,6 +192,7 @@ def patents_to_dataframes(patents:list[Patent]):
         patents (list[Patent]): all patents
     """
     # database connections
+    
     conn = sqlite3.connect('data/patent_npi_db.sqlite')
 
     # Tables: patents, assignors, assignees, uspto_ids
@@ -207,14 +208,20 @@ def patents_to_dataframes(patents:list[Patent]):
     
     conn.close()
 
-def read_assignees_sql(path:str):
+def read_patentees_sql(path:str):
     conn = sqlite3.connect(path)
-    assignee_df = pd.read_sql('SELECT * FROM assignors',conn)
+    query = """SELECT assignors.patent_id, assignors.surname, assignors.forename, assignees.address
+FROM assignors 
+JOIN assignees on assignees.patent_id = assignors.patent_id
+"""
+    patentee_df = pd.read_sql(query,conn)
     conn.close()
-    assignee_df['name'] = assignee_df.apply(lambda row: row['forename'] +' '+ row['surname'],axis=1)
-    return assignee_df
+    patentee_df.dropna(inplace=True)
+    patentee_df['address'] = patentee_df['address'].apply(lambda ads:' '.join(ads.split('\n')))
+    return patentee_df
 
 if __name__ == '__main__':
-    all_patents = parse_patents('data/ad20250218.xml')
+    # all_patents = parse_patents('data/ad20250218.xml')
+    patentees = read_patentees_sql('data/patent_npi_db.sqlite')
     # patents_to_dataframes(all_patents)
     print('debug')
